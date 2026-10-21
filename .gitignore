@@ -1,0 +1,15 @@
+# Never upload the bot token
+token.txt
+
+# Python environment and cache (recreated with pip install)
+.venv/
+__pycache__/
+
+# Temporary and sample files
+voice samples/
+*.mp3
+
+# Kept off GitHub so the repository can be made public safely
+Generated URL for the Agenda Timer.txt
+ava.wav
+timesup.wav
