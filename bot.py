@@ -13,6 +13,7 @@
 # activity is marked Incomplete with the time it ran. Only Exit timer removes a panel.
 # When time runs out, the bot posts a "Time's up" message and plays the alert sound in the voice channel.
 # To switch activities (or fix a wrong start), press Done, pick new settings, and press Start.
+# All bot messages are sent silently (no notification sound); the chime is the only alert.
 # Reads the bot token from token.txt in the same folder. Never put the token in this file.
 
 import asyncio
@@ -58,7 +59,7 @@ ACTIVITIES = [
     "Body doubling",
     "Group meeting",
 ]
-DURATIONS = [1, 3, 5, 10, 15, 30, 45, 50, 60, 90]  # minutes
+DURATIONS = [1, 5, 10, 15, 20, 30, 40, 45, 50, 60, 90]  # minutes
 DEFAULT_MINUTES = 5
 
 
@@ -112,6 +113,8 @@ class TimerPanel(discord.ui.View):
         self.ended_early = False  # True after Done: the activity is closed and +1 min is greyed out
         self.used_at_end = 0  # seconds used when Done was pressed (or when everyone left)
         self.incomplete = False  # True if everyone left the voice channel while the timer was going
+        self.record = None  # the end-of-activity message for the current activity
+        self.extended = False  # True once +1 min was pressed after time's up
         self.last_action = None  # (what happened, who did it, when), shown at the bottom of the panel
         self.update_buttons()
 
@@ -196,7 +199,8 @@ class TimerPanel(discord.ui.View):
         else:
             total = self.run_minutes + self.extra_minutes
             text = f"⏰ Time's up: **{self.activity}** ({fmt_minutes(total)})"
-        await self.message.channel.send(text)
+        await self.remove_record()  # replaces an "extended…" placeholder, if any
+        self.record = await self.message.channel.send(text, silent=True)
         await self.play_alert()
 
     # ---------- voice ----------
@@ -223,6 +227,27 @@ class TimerPanel(discord.ui.View):
             except Exception as e:
                 print(f"Leaving voice failed: {e!r}")
 
+    async def mark_record_extended(self, total_so_far):
+        # After +1 min following time's up, the earlier record is edited (not deleted),
+        # so the activity keeps a record even if the bot restarts before the extension ends.
+        if self.record is not None:
+            try:
+                await self.record.edit(
+                    content=f"⏰ Time's up: **{self.activity}** ({fmt_minutes(total_so_far)}, extended…)"
+                )
+            except Exception as e:
+                print(f"Couldn't update earlier record: {e!r}")
+
+    async def remove_record(self):
+        if self.record is not None:
+            try:
+                await self.record.delete()
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                print(f"Couldn't remove earlier record: {e!r}")
+            self.record = None
+
     async def mark_incomplete(self):
         # Everyone left the voice channel while the timer was running or paused:
         # stop the timer, post how long the activity ran, and grey out the timer buttons.
@@ -235,7 +260,9 @@ class TimerPanel(discord.ui.View):
         self.stop_watcher()
         self.used_at_end = (self.run_minutes + self.extra_minutes) * 60 - left
         self.ended_early = False
-        self.incomplete = True
+        # If the planned time had already run out (people left during added minutes),
+        # the activity counts as Time's up rather than Incomplete.
+        self.incomplete = not self.extended
         self.state = "done"
         self.update_buttons()
         try:
@@ -243,7 +270,11 @@ class TimerPanel(discord.ui.View):
         except Exception as e:
             print(f"Couldn't update panel: {e!r}")
         used = max(1, math.ceil(self.used_at_end / 60))
-        await self.message.channel.send(f"⚠️ Incomplete: **{self.activity}** ({fmt_minutes(used)})")
+        label = "⚠️ Incomplete" if self.incomplete else "⏰ Time's up"
+        await self.remove_record()  # replaces an "extended…" placeholder, if any
+        self.record = await self.message.channel.send(
+            f"{label}: **{self.activity}** ({fmt_minutes(used)})", silent=True
+        )
 
     async def close(self):
         # Removes this panel: stops its timer, deletes the message, and forgets it.
@@ -321,6 +352,8 @@ class TimerPanel(discord.ui.View):
         self.extra_minutes = 0
         self.ended_early = False
         self.incomplete = False
+        self.extended = False
+        self.record = None  # the previous activity's record stays in the chat untouched
         self.start_watcher()
         self.note(interaction, "Started")
         await self.refresh(interaction)
@@ -347,12 +380,17 @@ class TimerPanel(discord.ui.View):
 
     @discord.ui.button(label="+1 min", style=discord.ButtonStyle.secondary, row=2)
     async def add_minute(self, interaction, button):
+        extending = 0  # set below only when extending after time's up
         if self.state == "running":
             self.end_time += 60
         elif self.state == "paused":
             self.remaining += 60
         elif self.state == "done" and not (self.ended_early or self.incomplete):
             # After time's up, +1 min gives the same activity one more minute.
+            # The earlier Time's up message becomes "extended…" and is replaced by a single
+            # record with the full total when the activity ends.
+            extending = self.run_minutes + self.extra_minutes
+            self.extended = True
             self.end_time = time.time() + 60
             self.state = "running"
             self.start_watcher()
@@ -366,7 +404,9 @@ class TimerPanel(discord.ui.View):
             return
         self.extra_minutes += 1
         self.note(interaction, "+1 min")
-        await self.refresh(interaction)
+        await self.refresh(interaction)  # confirm the button press first (Discord allows 3 seconds)
+        if extending:
+            await self.mark_record_extended(extending)
 
     @discord.ui.button(label="Done", emoji="🔔", style=discord.ButtonStyle.primary, row=2)
     async def end_now(self, interaction, button):
@@ -392,7 +432,7 @@ class TimerPanel(discord.ui.View):
         # The timer keeps running; nothing about it changes.
         await interaction.response.defer()
         old_copies = panel_copies(interaction.message, self.message)
-        self.message = await interaction.channel.send(embed=self.embed(), view=self)
+        self.message = await interaction.channel.send(embed=self.embed(), view=self, silent=True)
         for old in old_copies:
             try:
                 await old.delete()
@@ -433,7 +473,7 @@ async def timer(interaction: discord.Interaction):
         return
     panel = TimerPanel()
     panel.voice_channel = interaction.channel
-    panel.message = await interaction.channel.send(embed=panel.embed(), view=panel)
+    panel.message = await interaction.channel.send(embed=panel.embed(), view=panel, silent=True)
     PANELS.append(panel)
     await interaction.response.send_message("Timer panel posted.", ephemeral=True)
 
