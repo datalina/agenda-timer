@@ -34,7 +34,7 @@ When an activity ends, the bot posts a record in the chat:
 - `✅ Done: Discussion (9 min)` when someone presses Done
 - `⚠️ Incomplete: Discussion (4 min)` when everyone leaves the voice channel mid-activity
 
-Each activity gets one record, even if time is added after it ends. The bot's messages are sent silently, so the chime in voice is the only sound it makes.
+Each activity gets one record, even if time is added after it ends.
 
 Countdown times use Discord's timestamp format, so each person sees times in their own time zone.
 
@@ -52,7 +52,6 @@ Countdown times use Discord's timestamp format, so each person sees times in the
 - **Adding time after time is up keeps a single record.** The earlier record changes to "extended…" and is replaced by one record with the full total when the activity ends, whether the extra time runs out, someone presses Done, or everyone leaves. If the bot restarts during the extension, the "extended…" record stays as a placeholder.
 - **If everyone leaves the voice channel mid-activity**, the timer stops, the panel turns grey and shows Incomplete, and the bot posts how long the activity ran. Pause, +1 min, and Done are greyed out until someone presses Start. The panel stays in the chat: only Exit timer removes it, and Move to bottom replaces it with a fresh copy. If the planned time had already run out and only added minutes were left, the activity is recorded as Time's up instead.
 - **The chime plays only if someone is in the voice channel.** A timer that runs out in an empty channel still posts its message.
-- **Messages are silent.** Records and panels are posted without notification sounds or push alerts, so they don't distract people mid-meeting. Edits and deletions are always silent in Discord.
 - **Two panels can run in the same channel**, for example one for the whole meeting and one for each activity. Exit timer on one panel keeps the bot in voice while the other is still timing.
 - **The bot can be in only one voice channel per server.** This is a Discord limit, so timers in two voice channels of the same server at once (such as breakout groups) aren't supported yet.
 - **If the bot restarts, existing panels stop responding.** Type `/timer` for a new panel and delete the old ones. On startup, the bot also clears any leftover voice connection.

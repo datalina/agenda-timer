@@ -13,7 +13,6 @@
 # activity is marked Incomplete with the time it ran. Only Exit timer removes a panel.
 # When time runs out, the bot posts a "Time's up" message and plays the alert sound in the voice channel.
 # To switch activities (or fix a wrong start), press Done, pick new settings, and press Start.
-# All bot messages are sent silently (no notification sound); the chime is the only alert.
 # Reads the bot token from token.txt in the same folder. Never put the token in this file.
 
 import asyncio
@@ -200,7 +199,7 @@ class TimerPanel(discord.ui.View):
             total = self.run_minutes + self.extra_minutes
             text = f"⏰ Time's up: **{self.activity}** ({fmt_minutes(total)})"
         await self.remove_record()  # replaces an "extended…" placeholder, if any
-        self.record = await self.message.channel.send(text, silent=True)
+        self.record = await self.message.channel.send(text)
         await self.play_alert()
 
     # ---------- voice ----------
@@ -272,9 +271,7 @@ class TimerPanel(discord.ui.View):
         used = max(1, math.ceil(self.used_at_end / 60))
         label = "⚠️ Incomplete" if self.incomplete else "⏰ Time's up"
         await self.remove_record()  # replaces an "extended…" placeholder, if any
-        self.record = await self.message.channel.send(
-            f"{label}: **{self.activity}** ({fmt_minutes(used)})", silent=True
-        )
+        self.record = await self.message.channel.send(f"{label}: **{self.activity}** ({fmt_minutes(used)})")
 
     async def close(self):
         # Removes this panel: stops its timer, deletes the message, and forgets it.
@@ -432,7 +429,7 @@ class TimerPanel(discord.ui.View):
         # The timer keeps running; nothing about it changes.
         await interaction.response.defer()
         old_copies = panel_copies(interaction.message, self.message)
-        self.message = await interaction.channel.send(embed=self.embed(), view=self, silent=True)
+        self.message = await interaction.channel.send(embed=self.embed(), view=self)
         for old in old_copies:
             try:
                 await old.delete()
@@ -473,7 +470,7 @@ async def timer(interaction: discord.Interaction):
         return
     panel = TimerPanel()
     panel.voice_channel = interaction.channel
-    panel.message = await interaction.channel.send(embed=panel.embed(), view=panel, silent=True)
+    panel.message = await interaction.channel.send(embed=panel.embed(), view=panel)
     PANELS.append(panel)
     await interaction.response.send_message("Timer panel posted.", ephemeral=True)
 
